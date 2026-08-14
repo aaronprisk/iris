@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Iris
+Exec=iris
+Icon=${SNAP}/meta/gui/icon.png
+Type=Application
+Terminal=false
+Categories=Network;AudioVideo;Chat;

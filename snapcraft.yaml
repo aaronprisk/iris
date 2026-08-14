@@ -1,0 +1,46 @@
+name: iris
+base: core22
+version: '1.0.0'
+summary: Lightweight LAN Voice Chat
+description: |
+  Zero-configuration, peer-to-peer LAN voice chat built for local gaming sessions. 
+  Bypasses the cloud entirely using mDNS and WebRTC for ultra-low latency audio.
+
+icon: snap/gui/icon.png
+grade: devel
+confinement: strict
+
+apps:
+  iris:
+    command: opt/iris/iris --no-sandbox
+    extensions: [gnome]
+    plugs:
+      - browser-support
+      - network
+      - network-bind
+      - audio-playback
+      - audio-record
+      - opengl
+
+parts:
+  iris:
+    plugin: nil
+    source: .
+    build-snaps:
+      - node/20/stable
+    build-packages:
+      - unzip
+      - dpkg-dev
+    override-build: |
+      # 1. Install dependencies natively
+      npm install
+      
+      # 2. Turn on verbose logging so we can see the download progress
+      export DEBUG=electron-packager,electron-download
+      
+      # 3. Package the app (adding --prune=true to strip out dev fluff)
+      npx --yes electron-packager . iris --platform=linux --arch=x64 --out=release-build --overwrite --prune=true
+      
+      # 4. Move the output to the final install directory
+      mkdir -p $CRAFT_PART_INSTALL/opt/iris
+      cp -rv ./release-build/iris-linux-*/* $CRAFT_PART_INSTALL/opt/iris/

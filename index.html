@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Iris</title>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: ubuntu, system-ui; background: #2c2f33; color: white; }
+        
+        /* Fancy Rainbow Sidebar */
+        .rainbow-sidebar {
+            width: 15px;
+            background: linear-gradient(to bottom, #FF0000, #FF7F00, #FFFF00, #00FF00, #0000FF, #4B0082, #9400D3);
+            box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+            z-index: 10;
+            transition: box-shadow 0.1s ease-in-out;
+        }
+        
+        .rainbow-sidebar.speaking {
+            box-shadow: 0 0 20px 5px rgba(255, 255, 255, 0.6), 2px 0 10px rgba(0,0,0,0.5);
+        }
+        
+        .main-content { flex: 1; padding: 25px; display: flex; flex-direction: column; overflow-y: auto; }
+        
+        /* Header Bar */
+        .header-bar { display: none; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; padding-bottom: 15px; margin-bottom: 20px; }
+        .header-bar img { width: 100px; object-fit: contain; }
+        
+        /* Centered Setup View */
+        #setupView {
+            flex: 1; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        
+        .setup-logo {
+            width: 250px;
+        }
+        
+        .setup-divider {
+            width: 60%;
+            max-width: 400px;
+            border: 0;
+            border-top: 2px solid #444;
+            margin: 20px 0;
+        }
+
+        .setup-input-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            width: 100%;
+            max-width: 250px;
+        }
+        
+        input[type="text"] { padding: 10px; border-radius: 4px; border: none; font-size: 16px; background: #40444b; color: white; width: 100%; box-sizing: border-box; text-align: center;}
+        input[type="text"]:focus { outline: 2px solid #5865F2; }
+        
+        button { padding: 10px 18px; cursor: pointer; color: white; border: none; border-radius: 4px; font-weight: bold; transition: background 0.2s; font-size: 14px; width: 100%;}
+        .btn-connect { background: #5865F2; }
+        .btn-connecting { background: #FEE75C; color: #000; cursor: wait; }
+        .btn-end { background: #ED4245; }
+        
+        .peer { background: #23272a; padding: 15px; margin-top: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        
+        #appView { display: none; width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="rainbow-sidebar" id="sidebar"></div>
+    <div class="main-content">
+        
+        <!-- Active Header -->
+        <div class="header-bar" id="headerBar">
+            <img class="logo" src="src/assets/iris.png" />
+            <div style="display: flex; gap: 10px;">
+                <button id="muteBtn" class="btn-connect" onclick="toggleMute()" style="width: auto;">Mute Mic</button>
+                <button class="btn-end" onclick="quitApp()" style="width: auto;">Quit Iris</button>
+            </div>
+        </div>
+
+        <!-- Centered Setup Screen -->
+        <div id="setupView">
+            <img class="setup-logo" src="src/assets/iris.png" alt="Iris Logo" />
+            <hr class="setup-divider" />
+            <p style="margin-bottom: 20px;">Enter your username to join the local network:</p>
+            
+            <div class="setup-input-group">
+                <input type="text" id="usernameInput" placeholder="Ex: Player 1" onkeydown="if(event.key === 'Enter') startIris()">
+                <button class="btn-connect" onclick="startIris()">Join Network</button>
+            </div>
+            <p style="color: #99aab5; font-size: 12px; margin-top: 25px;">Shortcut: Ctrl+Shift+M to toggle mute</p>
+        </div>
+
+        <!-- Network Roster -->
+        <div id="appView">
+            <div id="peersList">Scanning for players...</div>
+        </div>
+        
+        <audio id="remoteAudio" autoplay></audio>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        let localStream;
+        let peerConnection;
+        let activePeerIp = null; 
+        let iceQueue = [];       
+
+        // Load Persistent Username
+        window.onload = () => {
+            const savedName = localStorage.getItem('irisUsername');
+            if (savedName) document.getElementById('usernameInput').value = savedName;
+        };
+
+        window.startIris = () => {
+            const nameInput = document.getElementById('usernameInput').value.trim();
+            const displayName = nameInput || 'Anonymous Player';
+            
+            localStorage.setItem('irisUsername', displayName);
+            
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                localStream = stream;
+                
+                // Swap UI Views
+                document.getElementById('setupView').style.display = 'none';
+                document.getElementById('headerBar').style.display = 'flex';
+                document.getElementById('appView').style.display = 'block';
+                
+                ipcRenderer.send('start-discovery', displayName);
+                setupAudioVisualizer(stream);
+                
+                }).catch(err => {
+                // Snapcraft mic error prompt
+                document.getElementById('setupView').innerHTML = `
+                    <div style="background: rgba(237, 66, 69, 0.1); border: 1px solid #ED4245; padding: 20px; border-radius: 8px; text-align: left; max-width: 400px;">
+                        <h3 style="margin-top: 0;">🎙️ Microphone Blocked</h3>
+                        <p>Ubuntu's strict snap confinement requires you to explicitly grant microphone access.</p>
+                        <p>Please open your terminal and run the following command:</p>
+                        <code style="background: #1e1e1e; padding: 12px; display: block; border-radius: 4px; color: #00FF00; margin: 15px 0; font-family: monospace; font-size: 14px;">sudo snap connect iris:audio-record</code>
+                        <p style="font-size: 14px; color: #99aab5;">After running the command, reload the app to join the network.</p>
+                        <button class="btn-connect" onclick="ipcRenderer.send('relaunch-app')" style="width: 100%; margin-top: 10px;">Restart Iris</button>
+                    </div>
+                `;
+            });
+        };
+
+        // Audio Visualizer Glow Effect
+        function setupAudioVisualizer(stream) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioCtx.createAnalyser();
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
+            
+            analyser.fftSize = 256;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            const sidebar = document.getElementById('sidebar');
+
+            function checkVolume() {
+                requestAnimationFrame(checkVolume);
+                
+                const track = localStream.getAudioTracks()[0];
+                if (!track || !track.enabled) {
+                    sidebar.classList.remove('speaking');
+                    return;
+                }
+
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
+                let average = sum / bufferLength;
+                
+                if (average > 15) {
+                    sidebar.classList.add('speaking');
+                } else {
+                    sidebar.classList.remove('speaking');
+                }
+            }
+            checkVolume();
+        }
+
+        window.toggleMute = () => {
+            if (!localStream) return;
+            const audioTrack = localStream.getAudioTracks()[0];
+            audioTrack.enabled = !audioTrack.enabled;
+            
+            const btn = document.getElementById('muteBtn');
+            btn.innerText = audioTrack.enabled ? "Mute Mic" : "Unmute Mic";
+            btn.className = audioTrack.enabled ? "btn-connect" : "btn-end";
+        };
+
+        ipcRenderer.on('toggle-mute-shortcut', () => toggleMute());
+
+        function updateUI(ip, state, port) {
+            const btn = document.getElementById(`btn-${ip}`);
+            if (!btn) return;
+            if (state === 'connecting') {
+                btn.className = 'btn-connecting'; btn.innerText = 'Connecting...'; btn.disabled = true;
+            } else if (state === 'connected') {
+                btn.className = 'btn-end'; btn.innerText = 'End Call'; btn.disabled = false; btn.onclick = () => endCall();
+            } else if (state === 'disconnected') {
+                btn.className = 'btn-connect'; btn.innerText = 'Connect'; btn.disabled = false; btn.onclick = () => callPeer(ip, port);
+            }
+        }
+
+        function createPeerConnection(ip, port) {
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            activePeerIp = ip;
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            pc.ontrack = (event) => {
+                const audioEl = document.getElementById('remoteAudio');
+                audioEl.srcObject = event.streams[0];
+                audioEl.play().catch(e => console.error(e));
+            };
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) ipcRenderer.send('signal-send', { ip, port, data: { type: 'ice', candidate: event.candidate.toJSON() } });
+            };
+
+            pc.onconnectionstatechange = () => {
+                if (pc.connectionState === 'connected') updateUI(ip, 'connected', port);
+                else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') endCall();
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') endCall();
+            };
+            return pc;
+        }
+
+        window.callPeer = async (ip, port) => {
+            if (peerConnection) return;
+            updateUI(ip, 'connecting', port);
+            peerConnection = createPeerConnection(ip, port);
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                ipcRenderer.send('signal-send', { ip, port, data: { type: 'offer', offer } });
+            } catch (err) { endCall(); }
+        };
+
+        window.endCall = () => {
+            if (peerConnection) { peerConnection.close(); peerConnection = null; }
+            if (activePeerIp) {
+                const btn = document.getElementById(`btn-${activePeerIp}`);
+                if (btn) updateUI(activePeerIp, 'disconnected', btn.dataset.port);
+                activePeerIp = null;
+            }
+            document.getElementById('remoteAudio').srcObject = null;
+            iceQueue = [];
+        };
+
+        window.quitApp = () => {
+            // Clean up the network connections
+            endCall(); 
+            // Tell the main process to terminate
+            ipcRenderer.send('quit-app');
+        };
+
+        ipcRenderer.on('signal-receive', async (event, data) => {
+            try {
+                if (data.type === 'offer') {
+                    if (peerConnection && peerConnection.signalingState !== 'closed') return;
+                    updateUI(data.senderIp, 'connecting', data.senderPort);
+                    peerConnection = createPeerConnection(data.senderIp, data.senderPort); 
+                    await peerConnection.setRemoteDescription(data.offer);
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    ipcRenderer.send('signal-send', { ip: data.senderIp, port: data.senderPort, data: { type: 'answer', answer } });
+                    while (iceQueue.length) await peerConnection.addIceCandidate(new RTCIceCandidate(iceQueue.shift()));
+                } else if (data.type === 'answer') {
+                    if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+                        await peerConnection.setRemoteDescription(data.answer);
+                        while (iceQueue.length) await peerConnection.addIceCandidate(new RTCIceCandidate(iceQueue.shift()));
+                    }
+                } else if (data.type === 'ice') {
+                    if (data.candidate && data.candidate.candidate) {
+                        if (peerConnection && peerConnection.remoteDescription) {
+                            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        } else {
+                            iceQueue.push(data.candidate); 
+                        }
+                    }
+                }
+            } catch (err) { endCall(); }
+        });
+
+        ipcRenderer.on('peer-found', (event, peer) => {
+            const list = document.getElementById('peersList');
+            if(list.innerHTML.includes('Scanning')) list.innerHTML = '';
+            
+            if (!document.getElementById(`peer-${peer.ip}`)) {
+                const div = document.createElement('div');
+                div.className = 'peer';
+                div.id = `peer-${peer.ip}`;
+                div.innerHTML = `
+                    <span><strong>${peer.name}</strong><br><small>${peer.ip}</small></span>
+                    <button id="btn-${peer.ip}" class="btn-connect" data-port="${peer.port}" onclick="callPeer('${peer.ip}', ${peer.port})" style="width: auto;">Connect</button>
+                `;
+                list.appendChild(div);
+            }
+        });
+    </script>
+</body>
+</html>
