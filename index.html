@@ -139,7 +139,7 @@
                         <h3 style="margin-top: 0;">🎙️ Microphone Blocked</h3>
                         <p>Ubuntu's strict snap confinement requires you to explicitly grant microphone access.</p>
                         <p>Please open your terminal and run the following command:</p>
-                        <code style="background: #1e1e1e; padding: 12px; display: block; border-radius: 4px; color: #00FF00; margin: 15px 0; font-family: monospace; font-size: 14px;">sudo snap connect iris:audio-record</code>
+                        <code style="background: #1e1e1e; padding: 12px; display: block; border-radius: 4px; color: #00FF00; margin: 15px 0; font-family: monospace; font-size: 14px;">sudo snap connect iris-voice:audio-record</code>
                         <p style="font-size: 14px; color: #99aab5;">After running the command, reload the app to join the network.</p>
                         <button class="btn-connect" onclick="ipcRenderer.send('relaunch-app')" style="width: 100%; margin-top: 10px;">Restart Iris</button>
                     </div>

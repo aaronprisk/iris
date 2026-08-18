@@ -1,17 +1,17 @@
-name: iris
+name: iris-voice
 base: core22
-version: '1.0.0'
+version: '1.0.2'
 summary: Lightweight LAN Voice Chat
 description: |
   Zero-configuration, peer-to-peer LAN voice chat built for local gaming sessions. 
   Bypasses the cloud entirely using mDNS and WebRTC for ultra-low latency audio.
 
 icon: snap/gui/icon.png
-grade: devel
+grade: stable
 confinement: strict
 
 apps:
-  iris:
+  iris-voice:
     command: opt/iris/iris --no-sandbox
     extensions: [gnome]
     plugs:
@@ -23,7 +23,7 @@ apps:
       - opengl
 
 parts:
-  iris:
+  iris-voice:
     plugin: nil
     source: .
     build-snaps:

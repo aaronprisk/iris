@@ -1,16 +1,19 @@
 const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
 const Bonjour = require('bonjour-service').default;
 const WebSocket = require('ws');
+const path = require('path');
 
 // Force WebRTC ICE candidates to use raw LAN IPs
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 
 let mainWindow;
-app.isQuitting = false; 
+let appIsQuitting = false;
+let isLoggedIn = false;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 480, height: 480, autoHideMenuBar: true,
+        icon: path.join(__dirname, 'src', 'assets', 'icon.png'),
         webPreferences: { 
             nodeIntegration: true, 
             contextIsolation: false 
@@ -20,15 +23,23 @@ function createWindow() {
 
     // Intercept window close to minimize to the dock
     mainWindow.on('close', (event) => {
-        if (!app.isQuitting) {
-            event.preventDefault();
-            mainWindow.minimize();
+        if (!appIsQuitting) {
+            if (!isLoggedIn) {
+                // Not logged in: hard quit
+                appIsQuitting = true;
+                app.quit();
+            } else {
+                // Logged in: keep session alive in dock
+                event.preventDefault();
+                mainWindow.minimize();
+            }
         }
-        return false;
     });
 }
 
 app.whenReady().then(() => {
+    app.setAppUserModelId('iris-voice');
+    app.setDesktopName('iris-voice.desktop');
     createWindow();
 
     // Mute button mechanism
@@ -38,7 +49,7 @@ app.whenReady().then(() => {
 
     // Quit button mechanism 
     ipcMain.on('quit-app', () => {
-        app.isQuitting = true;
+        appIsQuitting = true;
         app.quit();
     });
 
@@ -63,6 +74,7 @@ app.whenReady().then(() => {
         });
 
         ipcMain.on('start-discovery', (event, username) => {
+            isLoggedIn = true;
             const bonjour = new Bonjour();
             const myServiceName = `Iris-${Math.floor(Math.random() * 10000)}`;
 
